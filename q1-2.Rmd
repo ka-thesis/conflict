@@ -1,0 +1,444 @@
+---
+title: "Thesis Question 1 & Question 2"
+author: "Karen Abraham"
+date: "12-09-2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Question 1: How has organized violence evolved over the last 30 years?
+
+## Loading Data and Libraries
+
+```{r}
+#Clearing the environment
+rm(list = ls())
+options(warn=-1)
+
+#Disable scientific notation
+options(scipen = 999) 
+
+#Loading libraries (must be installed before where necessary)
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+#for q2 map
+library(ggmap)
+```
+
+## UCDP Georeferenced Event Dataset (GED) Global version 21.1
+Disaggregated dataset covering individual events of organized lethal violence.
+
+* Pettersson, Therese, Shawn Davis, Amber Deniz, Garoun Engström, Nanar Hawach, Stina Högbladh, Margareta Sollenberg & Magnus Öberg (2021). Organized violence 1989-2020, with a special emphasis on Syria. Journal of Peace Research 58(4).
+* Sundberg, Ralph and Erik Melander (2013) Introducing the UCDP Georeferenced Event Dataset. Journal of Peace Research 50(4).
+
+```{r}
+#Loading the dataset
+ged211 <- read_csv("ged211.csv")
+head(ged211)
+```
+
+```{r}
+#Dimensions of the dataset
+dim(ged211)
+```
+
+```{r}
+summary(ged211)
+```
+
+## Aggregate Statistics
+
+### Number of deaths
+```{r}
+#What is the mean death toll for an instance of violence
+print(cat(c("Mean: ", round(mean(ged211$best),2), "Median: ", round(median(ged211$best),2) ,"Standard Deviation:", round(sd(ged211$best),2), "\n")))
+```
+
+### Standard deviation vs estimation error
+```{r}
+#The standard deviation gives us the variation in the number of deaths for all instances, but not a measure of accuracy
+#Let's take the differences between the highest estimate and lowest estimate for each instance and average the result
+mean(ged211$high - ged211$low)
+median(ged211$high - ged211$low)
+hist(ged211$high - ged211$low)
+```
+```{r}
+#What is the death toll distribution for an instances of violence
+boxplot(ged211$best,outline=FALSE, main="Death Toll Distribution without Outliers", ylab="Death Toll")
+```
+```{r}
+#What is the death toll distribution for an instances of violence over time
+boxplot(best~year, data=ged211,outline=FALSE, main="Death Toll Distribution without Outliers", ylab="Death Toll",xlab="Year")
+```
+###Total Deaths over Time
+```{r}
+#Sum of deaths by year
+ttl <- ged211%>%
+  dplyr::group_by(year) %>%
+  dplyr::summarize(total = sum(best))
+
+ttl %>%
+  ggplot( aes(x=year, y=total)) +
+  geom_line() +
+  ggtitle("Organized Violence 1989-2020") +
+  xlab("Year") +
+  ylab("Total Deaths")+
+  scale_y_continuous(breaks=c(0,50000,100000,150000,200000,250000,300000,350000,400000,450000,500000,550000,600000),limits=c(0, 600000)) #Axes labels manually added
+
+```
+
+
+```{r}
+#sum of deaths by date from Jan 2020
+ttl_2020 <- subset(ged211, year>=2020)
+  
+ttl_2020 <- ttl_2020 %>%
+  dplyr::group_by(date_start) %>%
+  dplyr::summarize(total = sum(best))
+
+ttl_2020 %>%
+  ggplot( aes(x=date_start, y=total)) +
+  geom_line() +
+  ggtitle("Organized Violence in 2020") +
+  xlab("Date") +
+  ylab("Total Deaths")
+```
+## Type of violence
+
+1) State-Based Armed Conflict: Violence between two organized actors of which at least one is the government of a state
+2) Non-State Conflict: Violence between actors of which neither party is the government of a state
+3) One-Sided Violence: Unarmed civilians perpetrated by organized non-state groups or governments
+```{r}
+#make type of violence a factor
+ged211$type_of_violence <- as.factor(ged211$type_of_violence)
+
+#group
+ttl <- ged211%>%
+  dplyr::group_by(type_of_violence,year) %>%
+  dplyr::summarize(total = sum(best))
+
+#plot
+ttl %>%
+  ggplot( aes(x=year, y=total, col=type_of_violence)) +
+  geom_line() +
+  ggtitle("Organized Violence by Type 1989-2020") +
+  xlab("Year")+
+  ylab("Total Deaths")+
+  scale_y_continuous(breaks=c(0,25000,50000,75000,100000,125000,5500000,525000,550000),limits=c(0, 600000)) + 
+  scale_color_discrete(name = "Type of Violence",labels = c("State-Based Violence", "Non-State Based Violence", "One-Sided Violence"))
+```
+
+```{r}
+type_of_violence <- ged211%>%
+  dplyr::group_by(type_of_violence) %>%
+  dplyr::summarize(total = sum(best))
+
+pie_labels <- paste0(c("State-Based Armed Conflict","Non-State Conflict","One-Sided Violence"), ": ", round(100 * type_of_violence$total / sum(type_of_violence$total), 2), "%")
+
+pie(type_of_violence$total,pie_labels, main="Type of Organized Violence 1989-2020")
+```
+
+Since we see in the line plot that the distribution of type of violence changes, let's look at the make up of violence after 2018 (both 2019 and 2020 together) to assess the current situation
+
+```{r}
+
+type_of_violence_2019 <- subset(ged211, year >= 2019)
+
+type_of_violence_2019 <- type_of_violence_2019%>%
+  dplyr::group_by(type_of_violence) %>%
+  dplyr::summarize(total = sum(best))
+
+pie_labels_2019 <- paste0(c("State-Based Armed Conflict","Non-State Conflict","One-Sided Violence"), ": ", round(100 * type_of_violence_2019$total / sum(type_of_violence_2019$total), 2), "%")
+
+pie(type_of_violence_2019$total,pie_labels_2019, main="Type of Organized Violence 2019-2020")
+```
+
+### Looking at which conflicts have been deadliest
+
+```{r}
+#Grouping data by conflict and year and totaling the # of deaths
+gpd_conf <- ged211 %>%
+  dplyr::group_by(conflict_name,year) %>%
+  dplyr::summarise(total = sum(best))
+
+#Selecting the deadliest conflicts by subsetting all totals in the upper 0.5%
+iqr3 <- quantile(gpd_conf$total, 0.995)
+
+gpd_conf <- subset(gpd_conf, total > iqr3)
+
+gpd_conf %>%
+  ggplot( aes(x=year, y=total, group=conflict_name, col=conflict_name)) +
+  geom_point() + 
+  ggtitle("Highest Death Toll Conflicts (Top 0.05%)")
+```
+
+```{r}
+#Taking the three relevant columns
+my_df <- cbind.data.frame(ged211$side_a,ged211$side_b,ged211$best)
+colnames(my_df) <- c("side_a","side_b","best")
+
+
+#Aggregating the death toll for each side_a - side_b pair
+paired_df <- aggregate(my_df$best, list(my_df$side_a,my_df$side_b), FUN=sum) 
+colnames(paired_df) <- c("side_a","side_b","best")
+
+#Sort by size
+paired_df <- paired_df %>% arrange(desc(best))
+
+#Looking at highest values
+head(paired_df)
+```
+
+Let's look at the highest death toll conflicts since 2010
+
+```{r}
+#Since 2010
+#Taking the three relevant columns
+ged211_10 <- subset(ged211, year >= 2010)
+my_df <- cbind.data.frame(ged211_10$side_a,ged211_10$side_b,ged211_10$best)
+colnames(my_df) <- c("side_a","side_b","best")
+
+
+#Aggregating the death toll for each side_a - side_b pair
+paired_df <- aggregate(my_df$best, list(my_df$side_a,my_df$side_b), FUN=sum) 
+colnames(paired_df) <- c("side_a","side_b","best")
+
+#Sort by size
+paired_df <- paired_df %>% arrange(desc(best))
+
+#Looking at highest values
+head(paired_df)
+```
+
+Another way to do this is by using the conflict_name, subtotalling and plotting
+
+Source:
+Gregory Saxton, & Gavin Simpson (n.d.). Ordering of bars in ggplot. Retrieved from https://stackoverflow.com/questions/5967593/ordering-of-bars-in-ggplot
+
+```{r}
+conflicts <- ged211 %>%
+  dplyr::group_by(conflict_name) %>%
+  dplyr::summarise(total = sum(best))
+
+subs2 <- subset(conflicts, total > 25000)
+
+
+ggplot(data=subs2,aes(x=reorder(conflict_name,total),y=total)) + 
+  geom_bar(stat ='identity')+
+  coord_flip() + 
+  scale_fill_gradient(name="Number of Deaths")+
+  labs(title = 'Highest Deaths by Conflict',x="Conflict Name",y="Death Toll")
+```
+
+```{r}
+conflicts <- ged211_10 %>%
+  dplyr::group_by(conflict_name) %>%
+  dplyr::summarise(total = sum(best))
+
+subs2 <- subset(conflicts, total > 25000)
+
+
+ggplot(data=subs2,aes(x=reorder(conflict_name,total),y=total)) + 
+  geom_bar(stat ='identity')+
+  coord_flip() + 
+  scale_fill_gradient(name="Number of Deaths")+
+  labs(title = 'Highest Deaths by Conflict',x="Conflict Name",y="Death Toll")
+```
+# Question 2: Which geographic regions are most affected by organized violence? 
+
+### Map
+
+Source:
+Hadley Wickham, D. N. (n.d.). 6 Maps. Retrieved December 02, 2021, from https://ggplot2-book.org/maps.html
+
+```{r}
+#https://ggplot2-book.org/maps.html
+
+#blank world map
+world <- map_data("world")
+map <- ggplot() + geom_polygon(data = world, aes(x=long, y = lat,group = group),fill=NA,color="grey")
+
+#factor the type of violence column
+ged211$type_of_violence <- as.factor(ged211$type_of_violence)
+
+#add points to map
+map + geom_point(data = ged211, aes(x = longitude, y = latitude, col = type_of_violence), size = 0.03) +
+  ggtitle("Map of All Instances") +
+  ylab("Latitude") + 
+  xlab("Longitude")+ 
+  scale_color_discrete(name = "Type of Violence",labels = c("State-Based Violence", "Non-State Based Violence", "One-Sided Violence"))
+```
+
+### Total deaths over time by region
+
+```{r}
+gpd_region <- ged211 %>%
+  dplyr::group_by(region,year) %>%
+  dplyr::summarise(total = sum(best))
+
+gpd_region %>%
+  ggplot( aes(x=year, y=total, group=region, color=region)) +
+  geom_line() +
+  ggtitle("Total deaths over time by region") +
+  ylab("Total Deaths") +
+  xlab("Year")+ 
+  scale_color_discrete(name = "Region")
+```
+
+```{r}
+gpd_region <- ged211%>%
+  dplyr::group_by(region) %>%
+  dplyr::summarize(total = sum(best))
+
+pie_labels <- paste0(gpd_region$region, ": ", round(100 * gpd_region$total/sum(gpd_region$total), 2), "%")
+
+pie(gpd_region$total,pie_labels, main="Regional Deaths by Organized Violence 1989-2020")
+```
+
+Again, we notice that the current situation is different to the last 30 years, with regions having more similar death tolls than previously. Let's look at the situation in 2019 and 2020.
+
+```{r}
+#subset
+gpd_region_2019 <- subset(ged211, year >= 2019)
+
+#group and subtotal
+gpd_region_2019 <- gpd_region_2019 %>%
+  dplyr::group_by(region) %>%
+  dplyr::summarize(total = sum(best))
+
+pie_labels_2019 <- paste0(gpd_region_2019$region, ": ", round(100 * gpd_region_2019$total / sum(gpd_region_2019$total), 2), "%")
+
+pie(gpd_region_2019$total,pie_labels_2019, main="Regional Deaths by Organized Violence 2019-2020")
+```
+
+### Types and regions
+Source:
+Haaf, S. (2019, April 03). Easy multi-panel plots in R using facet_wrap() and facet_grid() from ggplot2. Retrieved from http://zevross.com/blog/2019/04/02/easy-multi-panel-plots-in-r-using-facet_wrap-and-facet_grid-from-ggplot2/
+```{r}
+#http://zevross.com/blog/2019/04/02/easy-multi-panel-plots-in-r-using-facet_wrap-and-facet_grid-from-ggplot2/
+
+#One plot per region from 2000
+since_2000 <- subset(ged211,year>=2000)
+
+since_2000$type_of_violence <- as.factor(since_2000$type_of_violence)
+
+types_regions <- since_2000 %>%
+  dplyr::group_by(region,type_of_violence,year) %>%
+  dplyr::summarize(total = sum(best))
+
+types_regions
+
+types_regions %>% 
+  ggplot(aes(x=year, y=total,color=type_of_violence)) +
+  geom_line() +
+  geom_jitter(width=0.1,alpha=0.2) +
+  xlab("region")+ 
+  facet_wrap(~region) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Type of Violence by Region 2000-2020")+ 
+  scale_color_discrete(name = "Type of Violence",labels = c("State-Based Violence", "Non-State Based Violence", "One-Sided Violence"))+
+  ylab("Death Toll") +
+  xlab("Region")
+``` 
+
+We can see deaths by country
+```{r}
+#Group instances by country
+countries <- ged211 %>%
+  dplyr::group_by(country) %>%
+  dplyr::summarise(total = sum(best))
+
+#Subset instances with more than 10'000 deaths
+subs <- subset(countries, total > 30000)
+
+
+ggplot(data=subs,aes(x=reorder(country,total),y=total)) + 
+  geom_bar(stat ='identity')+
+  coord_flip() + 
+  scale_fill_gradient(name="Number of Deaths")+
+  labs(title = 'Highest Deaths by Country 1989-2020',y="Death Toll",x="Country Name")
+```
+
+We can see what this has been since 2010
+```{r}
+#SINCE 2010
+ged211_10 <- subset(ged211, year>=2010)
+
+#Group instances by country
+countries <- ged211_10 %>%
+  dplyr::group_by(country) %>%
+  dplyr::summarise(total = sum(best))
+
+#Subset instances with more than 10'000 deaths
+subs <- subset(countries, total > 20000)
+
+
+ggplot(data=subs,aes(x=reorder(country,total),y=total)) + 
+  geom_bar(stat ='identity')+
+  coord_flip() + 
+  scale_fill_gradient(name="Number of Deaths")+
+  labs(title = 'Highest Deaths by Country 2010-2020',y="Death Toll",x="Country Name")
+```
+
+If we want to look at the most recent instances, we can subset the 2020 data
+
+```{r}
+#Select data from 2020 only
+df2020 <- subset(ged211, year==2020)
+df2020 <- cbind.data.frame(df2020$country,df2020$best)
+colnames(df2020) <- c("country","best")
+
+
+#aggregate subtotals
+df_2020 <- aggregate(df2020$best, list(df2020$country), FUN=sum) 
+colnames(df_2020) <- c("country","total")
+
+df_2020 <- df_2020 %>% arrange(desc(total))
+
+head(df_2020)
+
+ggplot(data=df_2020[1:10,],aes(x=reorder(country,total),y=total)) + 
+  geom_bar(stat ='identity')+
+  coord_flip() + 
+  scale_fill_gradient(name="Number of Deaths")+
+  labs(title = 'Highest Deaths by Country in 2020',y="Death Toll",x="Conflict Name")
+```
+
+
+
+## Distribution of death tolls in conflicts by countries
+
+```{r}
+df <- aggregate(ged211$best, list(ged211$country), FUN=sum) 
+hist (df$x, breaks=50, main="Country Death Toll Distribution 1989-2020",xlab="Country Death Toll")
+```
+
+We can check if this distribution looks similar to the last 10 years
+
+```{r}
+df <- aggregate(ged211_10$best, list(ged211_10$country), FUN=sum) 
+hist (df$x, breaks=50, main="Country Death Toll Distribution 2010-2020",xlab="Country Death Toll")
+```
+
+## Libraries Used
+### Documentation and functionality
+
+readr: https://www.rdocumentation.org/packages/readr/versions/1.3.1
+dplyr: https://www.rdocumentation.org/packages/dplyr/versions/0.7.8
+ggplot2: https://ggplot2.tidyverse.org/
+ggmap: https://www.rdocumentation.org/packages/ggmap/versions/3.0.0
+
+## Sources Used
+
+### For creating a grid with multiple plots:
+Haaf, S. (2019, April 03). Easy multi-panel plots in R using facet_wrap() and facet_grid() from ggplot2. Retrieved from http://zevross.com/blog/2019/04/02/easy-multi-panel-plots-in-r-using-facet_wrap-and-facet_grid-from-ggplot2/
+
+### For creating a map in R:
+Hadley Wickham, D. N. (n.d.). 6 Maps. Retrieved December 02, 2021, from https://ggplot2-book.org/maps.html
+
+### For ordering a horizontal bar chart:
+Gregory Saxton, & Gavin Simpson (n.d.). Ordering of bars in ggplot. Retrieved from https://stackoverflow.com/questions/5967593/ordering-of-bars-in-ggplot
+
