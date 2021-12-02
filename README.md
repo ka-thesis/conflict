@@ -14,7 +14,7 @@ q6-clust.Rmd is a Notebook that contains the code belonging to the Cluster Analy
 
 All files have also been published as html files in case of any issues.
 
-The network graph is added as an html file accessible through https://ka-thesis.github.io/conflict/network.html/
+The network graph is added as an html file accessible through https://ka-thesis.github.io/
 
 
 
